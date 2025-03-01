@@ -83,8 +83,6 @@ services:
     depends_on:
       postgres-mattermost:
         condition: service_healthy
-      traefik:
-        condition: service_healthy
 
 networks:
   mattermost-network:
