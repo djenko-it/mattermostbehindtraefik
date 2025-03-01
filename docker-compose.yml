@@ -20,7 +20,7 @@ services:
   mattermost:
     image: ${MATTERMOST_IMAGE_TAG}
     volumes:
-      - mattermost-data:${DATA_PATH}
+      - mattermost-data:/mattermost/data
       - mattermost-config:/mattermost/config
       - mattermost-logs:/mattermost/logs
       - mattermost-plugins:/mattermost/plugins
