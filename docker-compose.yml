@@ -81,7 +81,7 @@ services:
       - "traefik.docker.network=traefik-network"
     restart: unless-stopped
     depends_on:
-      postgres-mattermost:
+      postgres:
         condition: service_healthy
 
 networks:
