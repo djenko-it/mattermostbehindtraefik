@@ -1,16 +1,16 @@
 services:
-  postgres-mattermost:
-    image: postgres:14-alpine
+  postgres:
+    image: ${MATTERMOST_POSTGRES_IMAGE_TAG}
     volumes:
       - mattermost-postgres:/var/lib/postgresql/data
     environment:
-      POSTGRES_DB: mattermost
-      POSTGRES_USER: mmuser
+      POSTGRES_DB: ${MATTERMOST_DB_NAME}
+      POSTGRES_USER: ${MATTERMOST_DB_USER}
       POSTGRES_PASSWORD: ${MATTERMOST_DB_PASSWORD}
     networks:
       - mattermost-network
     healthcheck:
-      test: [ "CMD", "pg_isready", "-q", "-d", "mattermost", "-U", "mmuser" ]
+      test: [ "CMD", "pg_isready", "-q", "-d", "${MATTERMOST_DB_NAME}", "-U", "${MATTERMOST_DB_USER}" ]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -18,36 +18,34 @@ services:
     restart: unless-stopped
 
   mattermost:
-    image: mattermost/mattermost-team-edition:7.10
+    image: ${MATTERMOST_IMAGE_TAG}
     volumes:
-      - mattermost-data:/mattermost/data
-      - mattermost-logs:/mattermost/logs
+      - mattermost-data:${DATA_PATH}
       - mattermost-config:/mattermost/config
+      - mattermost-logs:/mattermost/logs
       - mattermost-plugins:/mattermost/plugins
       - mattermost-client-plugins:/mattermost/client/plugins
+      - mattermost-bleve-indexes:/mattermost/bleve-indexes
     environment:
-      MM_SQLSETTINGS_DRIVERNAME: postgres
-      MM_SQLSETTINGS_DATASOURCE: postgres://mmuser:${MATTERMOST_DB_PASSWORD}@postgres-mattermost:5432/mattermost?sslmode=disable
-      MM_SERVICESETTINGS_SITEURL: https://${MATTERMOST_HOSTNAME}
-      MM_LOGSETTINGS_ENABLECONSOLE: "true"
-      MM_LOGSETTINGS_CONSOLELEVEL: "INFO"
-      MM_LOGSETTINGS_ENABLEFILE: "true"
-      MM_LOGSETTINGS_FILELEVEL: "INFO"
-      MM_EMAILSETTINGS_ENABLESMTPAUTH: "false"
-      MM_EMAILSETTINGS_FEEDBACKEMAIL: ${MATTERMOST_FEEDBACK_EMAIL}
-      MM_EMAILSETTINGS_SMTPSERVER: ${MATTERMOST_SMTP_SERVER}
-      MM_EMAILSETTINGS_SMTPPORT: ${MATTERMOST_SMTP_PORT}
-      MM_EMAILSETTINGS_SMTPUSERNAME: ${MATTERMOST_SMTP_USERNAME}
-      MM_EMAILSETTINGS_SMTPPASSWORD: ${MATTERMOST_SMTP_PASSWORD}
-      MM_EMAILSETTINGS_ENABLESMTPSECURITY: ${MATTERMOST_SMTP_SECURITY_ENABLED}
-      MM_EMAILSETTINGS_CONNECTIONSECURITY: ${MATTERMOST_SMTP_CONNECTION_SECURITY}
-      MM_EMAILSETTINGS_SENDEMAILNOTIFICATIONS: "true"
-      MM_INSTALL_TYPE: docker
+      TZ: ${MATTERMOST_TIMEZONE}
+      MM_SQLSETTINGS_DRIVERNAME: ${MATTERMOST_DB_TYPE}
+      MM_SQLSETTINGS_DATASOURCE: postgres://${MATTERMOST_DB_USER}:${MATTERMOST_DB_PASSWORD}@postgres:5432/${MATTERMOST_DB_NAME}?sslmode=disable&connect_timeout=10
+      MM_BLEVESETTINGS_INDEXDIR: /mattermost/bleve-indexes
+      DOMAIN: ${MATTERMOST_HOSTNAME}
+      MM_SERVICESETTINGS_SITEURL: ${MATTERMOST_URL}
+      MM_SERVICESETTINGS_FORWARD80TO443: 'false'
+      MATTERMOST_CONTAINER_READONLY: 'false'
     networks:
       - mattermost-network
       - traefik-network
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 200
+    read_only: 'false'
+    tmpfs:
+      - /tmp
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v4/system/ping"]
+      test: ["CMD", "curl", "-f", "http://localhost:8065/"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -55,7 +53,7 @@ services:
     labels:
       # Enable Traefik for this container
       - "traefik.enable=true"
-      # Match incoming requests on the specific hostname for Mattermost
+      # Match incoming requests on a specific hostname
       - "traefik.http.routers.mattermost.rule=Host(`${MATTERMOST_HOSTNAME}`)"
       # Assign the router to a named Traefik service
       - "traefik.http.routers.mattermost.service=mattermost"
@@ -67,8 +65,18 @@ services:
       - "traefik.http.routers.mattermost.tls=true"
       # Use Let's Encrypt for certificate management
       - "traefik.http.routers.mattermost.tls.certresolver=letsencrypt"
-      # Apply middlewares for security headers and compression
-      - "traefik.http.routers.mattermost.middlewares=compresstraefik,mattermost-securityheaders"
+      # Pass the original Host header to the container
+      - "traefik.http.services.mattermost.loadbalancer.passhostheader=true"
+      # Apply a compression middleware
+      - "traefik.http.routers.mattermost.middlewares=compresstraefik"
+      # Define settings for the compression middleware
+      - "traefik.http.middlewares.compresstraefik.compress=true"
+      # Assign the Zabbix UDP router to a named Traefik service
+      - "traefik.udp.routers.mm-call-rtr.service=mm-call-svc"
+      # Use the 'zabbix-udp' (custom) entry point
+      - "traefik.udp.routers.mm-call-rtr.entrypoints=calls"
+      # Define the internal container port for routing to the Zabbix UDP service
+      - "traefik.udp.services.mm-call-svc.loadBalancer.server.port=8443"
       # Specify which Docker network Traefik should use for routing
       - "traefik.docker.network=traefik-network"
     restart: unless-stopped
