@@ -69,13 +69,6 @@ services:
       - "traefik.http.routers.mattermost.tls.certresolver=letsencrypt"
       # Apply middlewares for security headers and compression
       - "traefik.http.routers.mattermost.middlewares=compresstraefik,mattermost-securityheaders"
-      # Security headers settings specifically for Mattermost
-      - "traefik.http.middlewares.mattermost-securityheaders.headers.stsSeconds=15552000"
-      - "traefik.http.middlewares.mattermost-securityheaders.headers.stsIncludeSubdomains=true"
-      - "traefik.http.middlewares.mattermost-securityheaders.headers.stsPreload=true"
-      - "traefik.http.middlewares.mattermost-securityheaders.headers.referrerPolicy=no-referrer"
-      - "traefik.http.middlewares.mattermost-securityheaders.headers.browserXssFilter=true"
-      - "traefik.http.middlewares.mattermost-securityheaders.headers.contentTypeNosniff=true"
       # Specify which Docker network Traefik should use for routing
       - "traefik.docker.network=traefik-network"
     restart: unless-stopped
