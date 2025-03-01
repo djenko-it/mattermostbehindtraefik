@@ -92,8 +92,9 @@ networks:
 
 volumes:
   mattermost-data:
-  mattermost-logs:
   mattermost-config:
+  mattermost-logs:
   mattermost-plugins:
   mattermost-client-plugins:
+  mattermost-bleve-indexes:
   mattermost-postgres:
