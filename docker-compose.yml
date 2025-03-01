@@ -1,0 +1,102 @@
+services:
+  postgres-mattermost:
+    image: postgres:14-alpine
+    volumes:
+      - mattermost-postgres:/var/lib/postgresql/data
+    environment:
+      POSTGRES_DB: mattermost
+      POSTGRES_USER: mmuser
+      POSTGRES_PASSWORD: ${MATTERMOST_DB_PASSWORD}
+    networks:
+      - mattermost-network
+    healthcheck:
+      test: [ "CMD", "pg_isready", "-q", "-d", "mattermost", "-U", "mmuser" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+
+  mattermost:
+    image: mattermost/mattermost-team-edition:7.10
+    volumes:
+      - mattermost-data:/mattermost/data
+      - mattermost-logs:/mattermost/logs
+      - mattermost-config:/mattermost/config
+      - mattermost-plugins:/mattermost/plugins
+      - mattermost-client-plugins:/mattermost/client/plugins
+    environment:
+      MM_SQLSETTINGS_DRIVERNAME: postgres
+      MM_SQLSETTINGS_DATASOURCE: postgres://mmuser:${MATTERMOST_DB_PASSWORD}@postgres-mattermost:5432/mattermost?sslmode=disable
+      MM_SERVICESETTINGS_SITEURL: https://${MATTERMOST_HOSTNAME}
+      MM_SERVICESETTINGS_LISTENADDRESS: :8000
+      MM_LOGSETTINGS_ENABLECONSOLE: "true"
+      MM_LOGSETTINGS_CONSOLELEVEL: "INFO"
+      MM_LOGSETTINGS_ENABLEFILE: "true"
+      MM_LOGSETTINGS_FILELEVEL: "INFO"
+      MM_EMAILSETTINGS_ENABLESMTPAUTH: "false"
+      MM_EMAILSETTINGS_FEEDBACKEMAIL: ${MATTERMOST_FEEDBACK_EMAIL}
+      MM_EMAILSETTINGS_SMTPSERVER: ${MATTERMOST_SMTP_SERVER}
+      MM_EMAILSETTINGS_SMTPPORT: ${MATTERMOST_SMTP_PORT}
+      MM_EMAILSETTINGS_ENABLESMTPAUTH: ${MATTERMOST_SMTP_AUTH_ENABLED}
+      MM_EMAILSETTINGS_SMTPUSERNAME: ${MATTERMOST_SMTP_USERNAME}
+      MM_EMAILSETTINGS_SMTPPASSWORD: ${MATTERMOST_SMTP_PASSWORD}
+      MM_EMAILSETTINGS_ENABLESMTPSECURITY: ${MATTERMOST_SMTP_SECURITY_ENABLED}
+      MM_EMAILSETTINGS_CONNECTIONSECURITY: ${MATTERMOST_SMTP_CONNECTION_SECURITY}
+      MM_EMAILSETTINGS_SENDEMAILNOTIFICATIONS: "true"
+      MM_INSTALL_TYPE: docker
+    networks:
+      - mattermost-network
+      - traefik-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v4/system/ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 90s
+    labels:
+      # Enable Traefik for this container
+      - "traefik.enable=true"
+      # Match incoming requests on the specific hostname for Mattermost
+      - "traefik.http.routers.mattermost.rule=Host(`${MATTERMOST_HOSTNAME}`)"
+      # Assign the router to a named Traefik service
+      - "traefik.http.routers.mattermost.service=mattermost"
+      # Use the 'websecure' (HTTPS) entry point
+      - "traefik.http.routers.mattermost.entrypoints=websecure"
+      # Define the internal container port for routing
+      - "traefik.http.services.mattermost.loadbalancer.server.port=8000"
+      # Enable TLS on this router
+      - "traefik.http.routers.mattermost.tls=true"
+      # Use Let's Encrypt for certificate management
+      - "traefik.http.routers.mattermost.tls.certresolver=letsencrypt"
+      # Apply middlewares for security headers and compression
+      - "traefik.http.routers.mattermost.middlewares=compresstraefik,mattermost-securityheaders"
+      # Security headers settings specifically for Mattermost
+      - "traefik.http.middlewares.mattermost-securityheaders.headers.stsSeconds=15552000"
+      - "traefik.http.middlewares.mattermost-securityheaders.headers.stsIncludeSubdomains=true"
+      - "traefik.http.middlewares.mattermost-securityheaders.headers.stsPreload=true"
+      - "traefik.http.middlewares.mattermost-securityheaders.headers.referrerPolicy=no-referrer"
+      - "traefik.http.middlewares.mattermost-securityheaders.headers.browserXssFilter=true"
+      - "traefik.http.middlewares.mattermost-securityheaders.headers.contentTypeNosniff=true"
+      # Specify which Docker network Traefik should use for routing
+      - "traefik.docker.network=traefik-network"
+    restart: unless-stopped
+    depends_on:
+      postgres-mattermost:
+        condition: service_healthy
+      traefik:
+        condition: service_healthy
+
+networks:
+  mattermost-network:
+    driver: bridge
+  traefik-network:
+    external: true
+
+volumes:
+  mattermost-data:
+  mattermost-logs:
+  mattermost-config:
+  mattermost-plugins:
+  mattermost-client-plugins:
+  mattermost-postgres:
